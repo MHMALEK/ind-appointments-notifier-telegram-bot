@@ -37,6 +37,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@grammyjs/menu": "^1.1.2",
+    "contentful": "^9.2.14",
     "dotenv": "^16.0.3",
     "grammy": "^1.12.0",
     "node-fetch": "^3.3.0",
