@@ -8,7 +8,7 @@ import { getIndServicesContenFromContentFull } from './content.js';
 
 dotEnv.config();
 
-console.log('44');
+console.log('55');
 const getIndServicesContent = async () => {
   try {
     const res = await getIndServicesContenFromContentFull();
