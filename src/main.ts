@@ -12,7 +12,6 @@ console.log('44');
 const getIndServicesContent = async () => {
   try {
     const res = await getIndServicesContenFromContentFull();
-    console.log(res);
     return res;
   } catch (e) {
     throw new Error(e);
@@ -25,6 +24,7 @@ const getSoonestAppointmentDataForDesk = async (serviceCode, deskCode) => {
       `${process.env.IND_SERVICE_BASE_API}/appointments/soonest?service=${serviceCode}&desk=${deskCode}`,
     );
 
+    console.log('responseObj', responseObj)
     const res: any = await responseObj.json();
     return res;
   } catch (e) {
@@ -37,8 +37,6 @@ const getSoonestAppointmentDataForDesk = async (serviceCode, deskCode) => {
 const { servicesCode, servicesByDesks, desksAndCodeObj } =
   await getIndServicesContent();
 
-// console.log('service_types', service_types, desks);
-
 /** This is how the dishes look that this bot is managing */
 interface SessionData {
   selectedService: string;
@@ -46,9 +44,7 @@ interface SessionData {
 }
 type MyContext = Context & SessionFlavor<SessionData> & MenuFlavor;
 
-const bot = new Bot<MyContext>(
-  process.env.TELEGRAM_BOT_API_TOKEN,
-);
+const bot = new Bot<MyContext>(process.env.TELEGRAM_BOT_API_TOKEN);
 
 bot.use(
   session({
@@ -144,7 +140,7 @@ selectDeskMenu.dynamic((ctx: MyContext, range) => {
 
           const inlineKeyboardForCreatANotifier = new InlineKeyboard().url(
             'Notify me please!',
-            `${process.env.IND_SERVICE_BASE_API}/notifier?desk=${
+            `${process.env.IND_WEB_APP_BASE_API}/notifier?desk=${
               (ctx as MyContext).session.selectedDesk
             }&service=${(ctx as MyContext).session.selectedService}&userId=${
               ctx.chat.id
