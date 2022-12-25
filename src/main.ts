@@ -1,79 +1,273 @@
-/* eslint-disable @typescript-eslint/explicit-function-return-type */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
 import { Bot, Context, session, SessionFlavor, InlineKeyboard } from 'grammy';
 import { Menu, MenuFlavor } from '@grammyjs/menu';
-import fetch from 'node-fetch';
-import dotEnv from 'dotenv';
+import * as dotenv from 'dotenv';
 import { getIndServicesContenFromContentFull } from './content.js';
+import fetch from 'node-fetch';
 
-dotEnv.config();
+dotenv.config();
 
-console.log('55');
-const getIndServicesContent = async () => {
+let bot: Bot;
+const telegramBotApiToken = process.env.TELEGRAM_BOT_API_TOKEN;
+
+const createBotInstance = (apiToken) => {
+  const bot = new Bot(apiToken);
+  return bot;
+};
+
+if (!bot) {
+  bot = createBotInstance(telegramBotApiToken);
+  bot.start();
+}
+
+process.once('SIGINT', () => bot.stop());
+process.once('SIGTERM', () => bot.stop());
+
+// api calls
+
+const fetchIndServicesList = async () => {
   try {
     const res = await getIndServicesContenFromContentFull();
-    return res;
+    console.log('res', res)
+    return res
   } catch (e) {
-    throw new Error(e);
+    console.log(e);
   }
 };
 
 const getSoonestAppointmentDataForDesk = async (serviceCode, deskCode) => {
+  const indServiceBASEAPI = process.env.IND_API_BASE_URL;
   try {
-    const responseObj = await fetch(
-      `${process.env.IND_SERVICE_BASE_API}/appointments/soonest?service=${serviceCode}&desk=${deskCode}`,
+    const data = await fetch(
+      `${indServiceBASEAPI}/appointments/soonest?service=${serviceCode}&desk=${deskCode}`,
     );
-
-    console.log('responseObj', responseObj)
-    const res: any = await responseObj.json();
+    const res = data.json();
     return res;
   } catch (e) {
+    console.log(e);
     throw new Error(e);
   }
 };
 
-// const startBot = async () => {};
+// bot util functions
+const closeMenu = async (ctx) => await ctx.menu.close();
+const setDeskInSession = (session, desk) => (session.selectedDesk = desk);
+const setServiceInSession = (session, service) =>
+  (session.selectedService = service);
 
-const { servicesCode, servicesByDesks, desksAndCodeObj } =
-  await getIndServicesContent();
+//   util function
+const capitalizeFirstLetter = (string) => {
+  return string.charAt(0).toUpperCase() + string.slice(1);
+};
 
-/** This is how the dishes look that this bot is managing */
+type MyContext = Context & SessionFlavor<SessionData> & MenuFlavor;
 interface SessionData {
   selectedService: string;
   selectedDesk: string;
 }
-type MyContext = Context & SessionFlavor<SessionData> & MenuFlavor;
 
-const bot = new Bot<MyContext>(process.env.TELEGRAM_BOT_API_TOKEN);
-
-bot.use(
-  session({
-    initial(): SessionData {
-      return { selectedService: null, selectedDesk: null };
-    },
-  }),
-);
-
-const mainText = 'Please select a service';
-const serviceMenu = new Menu<MyContext>('service');
-
-for (const serviceType of servicesCode) {
-  serviceMenu
-    .submenu(
-      {
-        text: capitalizeFirstLetter(serviceType.label),
-        payload: serviceType.code,
-      }, // label and payload,
-      'select-desk-menu',
-      (ctx) => {
-        ctx.editMessageText('Please select an IND desk');
-        ctx.session.selectedService = serviceType.code;
+const createSessionForBot = (bot: Bot) => {
+  const defaultSessionData = {
+    selectedService: null,
+    selectedDesk: null,
+  };
+  bot.use(
+    session({
+      initial(): SessionData {
+        return { ...defaultSessionData };
       },
-    )
-    .row();
-}
+    }),
+  );
+};
 
-const showSoonestAppointmentSlot = (
+const createAndInitBot = async () => {
+  const startMessageText = 'Please select a service';
+
+  createSessionForBot(bot);
+
+  // create menus
+  const { selectServiceMenu, selectDeskMenu } =
+    await createIndAppointmentMenus();
+
+  //   make desk menu children of service menu (so navigation and back button works properly)
+  selectServiceMenu.register(selectDeskMenu);
+
+  //   initialze menu in the bot
+  bot.use(selectServiceMenu);
+
+  // start command handler
+  const startHandler = (ctx) => {
+    ctx.reply(startMessageText, { reply_markup: selectServiceMenu });
+  };
+
+  initBotStartCommand(bot, startHandler);
+
+  bot.catch(console.error.bind(console));
+};
+
+const initBotStartCommand = (bot, cb) => {
+  bot.command('start', (ctx) => cb(ctx));
+};
+
+const createIndAppointmentMenus = async () => {
+  const { servicesCode, servicesByDesks, desks } = await fetchIndServicesList();
+
+  const serviceMenuName = 'select-service-menu';
+  const deskMenuName = 'select-desk-menu';
+
+  const selectServiceMenu = new Menu<MyContext & SessionFlavor<any>>(
+    serviceMenuName,
+  );
+  const selectDeskMenu = new Menu<MyContext & SessionFlavor<any>>(deskMenuName);
+
+  const createServiceMenu = () => {
+    // render menu
+    for (const serviceType of servicesCode) {
+      selectServiceMenu
+        .submenu(
+          {
+            text: capitalizeFirstLetter(serviceType.label),
+            payload: serviceType.code,
+          },
+          //  after select any item we will show the desk menu (result)
+          deskMenuName,
+          (ctx) => {
+            // edit select service text and convert for desk menu `Please select an IND desk`
+            ctx.editMessageText('Please select an IND desk');
+            // save selected service to session for later usage
+            setServiceInSession(ctx.session, serviceType.code);
+          },
+        )
+        .row();
+    }
+  };
+
+  const creteDeskMenu = () => {
+    selectDeskMenu.dynamic((ctx: MyContext, range) => {
+      // get the selected service on previous step  from session
+      const selectedService = ctx.session.selectedService;
+
+      // show error if somehow user didn't select any service
+      if (typeof selectedService !== 'string')
+        throw new Error('No service chosen');
+
+      //  get the IND desks for this service
+      const desksForThisService = getIndDesksByService(
+        servicesByDesks,
+        selectedService,
+      );
+
+      for (const desk of desksForThisService) {
+        createDeskMenuItem(range, desk);
+      }
+    });
+
+    //   add back button to desk menu
+    selectDeskMenu.back('back to services');
+  };
+
+  const createDeskMenuItem = (range, desk) => {
+    // create desk menu item based on service we have selected
+    range
+      .text(
+        { text: capitalizeFirstLetter(desk.label), payload: desk.label }, // label and payload
+        async (ctx) => {
+          // if user clicked on one of the desks in this menu (except back button)
+          // close the menus
+          await closeMenu(ctx);
+          const deskCode = desk.code;
+          setDeskInSession(ctx.session, deskCode);
+
+          // show user the selected desk and service
+          await ctx.editMessageText(
+            sendSelectedDeskAndServiceMessage(
+              desks,
+              servicesByDesks,
+              ctx.session.selectedService,
+              ctx.session.selectedDesk,
+            ),
+            { parse_mode: 'HTML' },
+          );
+
+          try {
+            // fetch soonest appointment
+            const res = await getSoonestAppointmentDataForDesk(
+              ctx.session.selectedService,
+              ctx.session.selectedDesk,
+            );
+
+            const deskLabel = desks[ctx.session.selectedDesk];
+
+            const serviceLabel =
+              servicesByDesks[ctx.session.selectedService].label;
+
+            sendMessageShowSoonestAvailableSlot(
+              ctx,
+              res,
+              deskLabel,
+              serviceLabel,
+            );
+
+            const inlineKeyboardForCreatANotifier = new InlineKeyboard().url(
+              'Select a date!',
+              `${process.env.IND_WEB_APP_URL}/notifier?desk=${
+                (ctx as MyContext).session.selectedDesk
+              }&service=${(ctx as MyContext).session.selectedService}&userId=${
+                ctx.chat.id
+              }`,
+            );
+
+            await ctx.reply(
+              'Do you want to be notified when a sooner timeslot become availble?',
+              {
+                reply_markup: inlineKeyboardForCreatANotifier,
+              },
+            );
+          } catch (e) {
+            console.log(e);
+            ctx.reply(
+              'We encountered a problem. it might be a problem from IND website. please /start over or try other options',
+            );
+          }
+
+          await ctx.reply('Do you need a new appointment? Please /start over');
+        },
+      )
+      .row();
+  };
+
+  createServiceMenu();
+  creteDeskMenu();
+
+  return {
+    selectDeskMenu,
+    selectServiceMenu,
+  };
+};
+
+// message util functions
+const sendMessageShowSoonestAvailableSlot = async (
+  ctx,
+  res,
+  deskLabel,
+  serviceLabel,
+) => {
+  const inlineKeyboardForBookAppointment = new InlineKeyboard().url(
+    'Get it now!',
+    `https://oap.ind.nl/oap/en/#/${ctx.session.selectedService}`,
+  );
+
+  await ctx.editMessageText(
+    createMessageForSoonestAvaibleAppointment(res, serviceLabel, deskLabel),
+    {
+      reply_markup: inlineKeyboardForBookAppointment,
+      parse_mode: 'HTML',
+    },
+  );
+};
+
+const createMessageForSoonestAvaibleAppointment = (
   soonestAppointmentPayload,
   selectedService,
   selectedDesk,
@@ -87,110 +281,27 @@ const showSoonestAppointmentSlot = (
   )} at ${capitalizeFirstLetter(selectedDesk)}!`;
 };
 
-const selectDeskMenu = new Menu('select-desk-menu');
-selectDeskMenu.dynamic((ctx: MyContext, range) => {
-  const service = ctx.session.selectedService;
-  const desksForThisService = getIndDesksByService(service);
+const sendSelectedDeskAndServiceMessage = (
+  desks,
+  services,
+  selectedService: string,
+  selectedDesk: string,
+) => {
+  const deskLabel = desks[selectedDesk];
+  const serviceLabel = services[selectedService].label;
 
-  if (typeof service !== 'string') throw new Error('No service chosen');
-  for (const desk of desksForThisService) {
-    range
-      .text(
-        { text: capitalizeFirstLetter(desk.label), payload: desk.label }, // label and payload
-        async (ctx) => {
-          await ctx.menu.close();
-
-          const deskCode = desksAndCodeObj.filter(
-            (deskObj) => deskObj.label === ctx.match,
-          )[0].code;
-
-          (ctx as MyContext).session.selectedDesk = deskCode;
-
-          await ctx.editMessageText(
-            selectDeskForService(
-              (ctx as MyContext).session.selectedService,
-              (ctx as MyContext).session.selectedDesk,
-            ),
-            { parse_mode: 'HTML' },
-          ); // handler
-
-          const res = await getSoonestAppointmentDataForDesk(
-            (ctx as MyContext).session.selectedService,
-            (ctx as MyContext).session.selectedDesk,
-          );
-
-          const inlineKeyboardForBookAppointment = new InlineKeyboard().url(
-            'Get it now!',
-            `https://oap.ind.nl/oap/en/#/${ctx.session.selectedService}`,
-          );
-
-          const deskLabel = desksAndCodeObj.filter(
-            (desk) => desk.code === deskCode,
-          )[0].label;
-          const serviceLabel =
-            servicesByDesks[(ctx as MyContext).session.selectedService].label;
-
-          await ctx.editMessageText(
-            showSoonestAppointmentSlot(res, serviceLabel, deskLabel),
-            {
-              reply_markup: inlineKeyboardForBookAppointment,
-              parse_mode: 'HTML',
-            },
-          );
-
-          const inlineKeyboardForCreatANotifier = new InlineKeyboard().url(
-            'Notify me please!',
-            `${process.env.IND_WEB_APP_BASE_API}/notifier?desk=${
-              (ctx as MyContext).session.selectedDesk
-            }&service=${(ctx as MyContext).session.selectedService}&userId=${
-              ctx.chat.id
-            }`,
-          );
-
-          await ctx.reply('Do you need a new appointment? Please /start over');
-          await ctx.reply(
-            'Do you need to get a new appointment sooner? use our service!',
-            {
-              reply_markup: inlineKeyboardForCreatANotifier,
-            },
-          );
-        },
-      )
-      .row();
-  }
-});
-
-selectDeskMenu.back('back to services');
-
-const getIndDesksByService = (selectedService: any) => {
-  return servicesByDesks[selectedService].desks;
-};
-
-const selectDeskForService = (serviceCode: string, deskCode: string) => {
-  const deskLabel = desksAndCodeObj.filter((desk) => desk.code === deskCode)[0]
-    .label;
-  const serviceLabel = servicesByDesks[serviceCode].label;
   if (deskLabel && serviceLabel) {
     return `You have selected <b>${capitalizeFirstLetter(
       serviceLabel,
-    )}</b> for ${capitalizeFirstLetter(deskLabel)}. we are working on it...`;
+    )}</b> for ${capitalizeFirstLetter(deskLabel)}. We are working on it...`;
   } else {
-    return 'we can not find the slot at the moment. please try again later or go to IND website directly';
+    return 'We can not find the slot at the moment. Please try again later or go to IND website directly';
   }
 };
 
-serviceMenu.register(selectDeskMenu as any);
+// ind content functions
+const getIndDesksByService = (servicesByDesks, selectedService: any) => {
+  return servicesByDesks[selectedService].desks;
+};
 
-bot.use(serviceMenu);
-
-bot.command('start', (ctx) => {
-  ctx.reply(mainText, { reply_markup: serviceMenu });
-});
-
-// console.log('bot', bot);
-bot.catch(console.error.bind(console));
-bot.start();
-
-function capitalizeFirstLetter(string) {
-  return string.charAt(0).toUpperCase() + string.slice(1);
-}
+createAndInitBot();
