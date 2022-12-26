@@ -29,8 +29,8 @@ process.once('SIGTERM', () => bot.stop());
 const fetchIndServicesList = async () => {
   try {
     const res = await getIndServicesContenFromContentFull();
-    console.log('res', res)
-    return res
+    console.log('res', res);
+    return res;
   } catch (e) {
     console.log(e);
   }
@@ -82,7 +82,7 @@ const createSessionForBot = (bot: Bot) => {
 };
 
 const createAndInitBot = async () => {
-  const startMessageText = 'Please select a service';
+  const startMessageText = `Hi, This bot will help you to find the *soonest* time slots for Netherlands IND desks. Please select a service that you need to get an appointment for it.`;
 
   createSessionForBot(bot);
 
@@ -97,8 +97,11 @@ const createAndInitBot = async () => {
   bot.use(selectServiceMenu);
 
   // start command handler
-  const startHandler = (ctx) => {
-    ctx.reply(startMessageText, { reply_markup: selectServiceMenu });
+  const startHandler = (ctx: Context) => {
+    ctx.reply(startMessageText, {
+      reply_markup: selectServiceMenu,
+      parse_mode: 'Markdown',
+    });
   };
 
   initBotStartCommand(bot, startHandler);
@@ -208,22 +211,6 @@ const createIndAppointmentMenus = async () => {
               deskLabel,
               serviceLabel,
             );
-
-            const inlineKeyboardForCreatANotifier = new InlineKeyboard().url(
-              'Select a date!',
-              `${process.env.IND_WEB_APP_URL}/notifier?desk=${
-                (ctx as MyContext).session.selectedDesk
-              }&service=${(ctx as MyContext).session.selectedService}&userId=${
-                ctx.chat.id
-              }`,
-            );
-
-            await ctx.reply(
-              'Do you want to be notified when a sooner timeslot become availble?',
-              {
-                reply_markup: inlineKeyboardForCreatANotifier,
-              },
-            );
           } catch (e) {
             console.log(e);
             ctx.reply(
@@ -253,10 +240,25 @@ const sendMessageShowSoonestAvailableSlot = async (
   deskLabel,
   serviceLabel,
 ) => {
-  const inlineKeyboardForBookAppointment = new InlineKeyboard().url(
-    'Get it now!',
-    `https://oap.ind.nl/oap/en/#/${ctx.session.selectedService}`,
+  console.log(
+    (ctx as MyContext).session.selectedDesk,
+    (ctx as MyContext).session.selectedService,
+    ctx.chat.id,
+    process.env.IND_WEB_APP_URL,
   );
+  const inlineKeyboardForBookAppointment = new InlineKeyboard()
+    .url(
+      'Get it now!',
+      `https://oap.ind.nl/oap/en/#/${ctx.session.selectedService}`,
+    )
+    .url(
+      'Notify me!',
+      `${process.env.IND_WEB_APP_URL}/notifier?desk=${
+        (ctx as MyContext).session.selectedDesk
+      }&service=${(ctx as MyContext).session.selectedService}&userId=${
+        ctx.chat.id
+      }`,
+    );
 
   await ctx.editMessageText(
     createMessageForSoonestAvaibleAppointment(res, serviceLabel, deskLabel),
@@ -278,7 +280,13 @@ const createMessageForSoonestAvaibleAppointment = (
     soonestAppointmentPayload.startTime
   }</b> for ${capitalizeFirstLetter(
     selectedService,
-  )} at ${capitalizeFirstLetter(selectedDesk)}!`;
+  )} at ${capitalizeFirstLetter(selectedDesk)}!
+  \n
+  Do you want to get a notification if a sooner slot became available for ${capitalizeFirstLetter(
+    selectedService,
+  )} at ${capitalizeFirstLetter(
+    selectedDesk,
+  )}? Click on Notify me button and select your prefered date! We will check and notify you if a sooner slot became available.`;
 };
 
 const sendSelectedDeskAndServiceMessage = (
