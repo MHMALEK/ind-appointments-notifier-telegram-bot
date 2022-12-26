@@ -211,6 +211,26 @@ const createIndAppointmentMenus = async () => {
               deskLabel,
               serviceLabel,
             );
+
+            const inlineKeyboardForCreatANotifier = new InlineKeyboard().url(
+              'Notify!',
+              `${process.env.IND_WEB_APP_URL}/notifier?desk=${
+                (ctx as MyContext).session.selectedDesk
+              }&service=${(ctx as MyContext).session.selectedService}&userId=${
+                ctx.chat.id
+              }`,
+            );
+
+            await ctx.reply(
+              `Do you want to get a notification if a sooner slot became available for ${capitalizeFirstLetter(
+                serviceLabel,
+              )} at ${capitalizeFirstLetter(
+                deskLabel,
+              )}? Click on Notify me button and select your prefered date! We will check and notify you if a sooner slot became available.`,
+              {
+                reply_markup: inlineKeyboardForCreatANotifier,
+              },
+            );
           } catch (e) {
             console.log(e);
             ctx.reply(
@@ -240,25 +260,10 @@ const sendMessageShowSoonestAvailableSlot = async (
   deskLabel,
   serviceLabel,
 ) => {
-  console.log(
-    (ctx as MyContext).session.selectedDesk,
-    (ctx as MyContext).session.selectedService,
-    ctx.chat.id,
-    process.env.IND_WEB_APP_URL,
+  const inlineKeyboardForBookAppointment = new InlineKeyboard().url(
+    'Get it now!',
+    `https://oap.ind.nl/oap/en/#/${ctx.session.selectedService}`,
   );
-  const inlineKeyboardForBookAppointment = new InlineKeyboard()
-    .url(
-      'Get it now!',
-      `https://oap.ind.nl/oap/en/#/${ctx.session.selectedService}`,
-    )
-    .url(
-      'Notify me!',
-      `${process.env.IND_WEB_APP_URL}/notifier?desk=${
-        (ctx as MyContext).session.selectedDesk
-      }&service=${(ctx as MyContext).session.selectedService}&userId=${
-        ctx.chat.id
-      }`,
-    );
 
   await ctx.editMessageText(
     createMessageForSoonestAvaibleAppointment(res, serviceLabel, deskLabel),
@@ -281,12 +286,7 @@ const createMessageForSoonestAvaibleAppointment = (
   }</b> for ${capitalizeFirstLetter(
     selectedService,
   )} at ${capitalizeFirstLetter(selectedDesk)}!
-  \n
-  Do you want to get a notification if a sooner slot became available for ${capitalizeFirstLetter(
-    selectedService,
-  )} at ${capitalizeFirstLetter(
-    selectedDesk,
-  )}? Click on Notify me button and select your prefered date! We will check and notify you if a sooner slot became available.`;
+ `;
 };
 
 const sendSelectedDeskAndServiceMessage = (
