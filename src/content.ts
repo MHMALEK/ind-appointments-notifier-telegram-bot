@@ -13,7 +13,7 @@ const client = contentful.createClient({
 
 const getIndServicesContenFromContentFull = async () => {
   try {
-    const res = await client.getEntry('4XKP5Yd9oV0devAyvEopZl');
+    const res = await client.getEntry('6iIBzea4MHGAkhyNYr3urK');
     return (res.fields as any).indData.data;
   } catch (e) {
     return e;
