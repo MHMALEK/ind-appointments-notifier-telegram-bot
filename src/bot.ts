@@ -293,9 +293,7 @@ const createMessageForApproveNotifier = async (
   selectedDesk,
   selectedService,
 ) => {
-  const { servicesCode, servicesByDesks, desks } = await fetchIndServicesList();
-
-  console.log(selectedService, servicesCode, servicesByDesks, desks);
+  const { servicesByDesks, desks } = await fetchIndServicesList();
 
   const deskLabel = desks[selectedDesk];
 
@@ -373,8 +371,6 @@ app.post('/set-date', async (req, res) => {
   const selectedDesk = req.body.selectedDesk;
   const selectedService = req.body.selectedService;
 
-  console.log(selectedDate, req.body);
-
   const messageForApproveWeGotDate = await createMessageForApproveNotifier(
     selectedDate,
     selectedDesk,
@@ -391,8 +387,6 @@ app.post('/set-date', async (req, res) => {
       telegram_chat_id: chatId,
       prefered_way_of_communication: 'telegram',
     });
-
-    console.log(data, 'data')
 
     const config = {
       method: 'post',

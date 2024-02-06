@@ -96,7 +96,6 @@ https://cdn.jsdelivr.net/npm/air-datepicker@3.4.0/air-datepicker.min.css
           const selectedService = urlParams.get('selectedService');
           const selectedDesk = urlParams.get('selectedDesk');
           
-          console.log(chatId, selectedService, selectedDesk);
           // Proceed only if a date has been selected
           if (selectedDate) {
             // Send a POST request with the selected date and other parameters
@@ -124,8 +123,9 @@ https://cdn.jsdelivr.net/npm/air-datepicker@3.4.0/air-datepicker.min.css
             });
           } else {
             // Display an error message or perform other actions when a date has not been selected
-            messageElement.style.display = 'none';
-            console.log('Please select a date');
+            messageElement.style.display = 'block';
+            messageElement.innerHTML = 'Please select a date';
+
           }
         });
         
@@ -144,7 +144,6 @@ https://cdn.jsdelivr.net/npm/air-datepicker@3.4.0/air-datepicker.min.css
           maxDate: threeMonthsFromNow,
           dateFormat: 'yyyy-MM-dd',
           onSelect: function (selection) {
-            console.log(selection)
             messageElement.style.display = 'none';
             selectedDate = selection;
             submitButton.disabled = false;
