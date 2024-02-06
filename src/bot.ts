@@ -354,10 +354,19 @@ app.post('/send-message', async (req, res) => {
     `https://oap.ind.nl/oap/en/#/`,
   );
 
-  await bot.api.sendMessage(telegram_chat_id, message, {
-    parse_mode: 'HTML',
-    reply_markup: inlineKeyboardForBookAppointment,
-  });
+  if (message.includes('We have found a new slot')) {
+    // TODO: not great to hardcode the message here but it's a quick dirty implementation
+    await bot.api.sendMessage(telegram_chat_id, message, {
+      parse_mode: 'HTML',
+      reply_markup: inlineKeyboardForBookAppointment,
+    });
+  } else {
+    // send expired message without inline keyboard
+    await bot.api.sendMessage(telegram_chat_id, message, {
+      parse_mode: 'HTML',
+    });
+  }
+
   res.sendStatus(200);
 });
 
