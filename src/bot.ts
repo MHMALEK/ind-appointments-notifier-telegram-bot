@@ -3,8 +3,12 @@
 import { Bot, Context, session, SessionFlavor, InlineKeyboard } from 'grammy';
 import { Menu, MenuFlavor } from '@grammyjs/menu';
 import * as dotenv from 'dotenv';
-import { getIndServicesContenFromContentFull } from './content.js';
-import fetch from 'node-fetch';
+import { getIndServicesContenFromContentFull } from './content';
+import axios from 'axios';
+import express from 'express';
+import cors from 'cors';
+import bodyParser from 'body-parser';
+import * as path from 'path';
 
 dotenv.config();
 
@@ -16,11 +20,6 @@ const createBotInstance = (apiToken) => {
   return bot;
 };
 
-if (!bot) {
-  bot = createBotInstance(telegramBotApiToken);
-  bot.start();
-}
-
 process.once('SIGINT', () => bot.stop());
 process.once('SIGTERM', () => bot.stop());
 
@@ -29,7 +28,6 @@ process.once('SIGTERM', () => bot.stop());
 const fetchIndServicesList = async () => {
   try {
     const res = await getIndServicesContenFromContentFull();
-    console.log('res', res);
     return res;
   } catch (e) {
     console.log(e);
@@ -39,13 +37,11 @@ const fetchIndServicesList = async () => {
 const getSoonestAppointmentDataForDesk = async (serviceCode, deskCode) => {
   const indServiceBASEAPI = process.env.IND_API_BASE_URL;
   try {
-    const data = await fetch(
+    const data = await axios.get(
       `${indServiceBASEAPI}/appointments/soonest?service=${serviceCode}&desk=${deskCode}`,
     );
-    const res = data.json();
-    return res;
+    return data;
   } catch (e) {
-    console.log(e);
     throw new Error(e);
   }
 };
@@ -65,12 +61,14 @@ type MyContext = Context & SessionFlavor<SessionData> & MenuFlavor;
 interface SessionData {
   selectedService: string;
   selectedDesk: string;
+  chatId: number;
 }
 
 const createSessionForBot = (bot: Bot) => {
   const defaultSessionData = {
     selectedService: null,
     selectedDesk: null,
+    chatId: null,
   };
   bot.use(
     session({
@@ -97,7 +95,8 @@ const createAndInitBot = async () => {
   bot.use(selectServiceMenu);
 
   // start command handler
-  const startHandler = (ctx: Context) => {
+  const startHandler = (ctx: Context & SessionFlavor<SessionData>) => {
+    ctx.session.chatId = ctx.message.chat.id;
     ctx.reply(startMessageText, {
       reply_markup: selectServiceMenu,
       parse_mode: 'Markdown',
@@ -175,7 +174,7 @@ const createIndAppointmentMenus = async () => {
     range
       .text(
         { text: capitalizeFirstLetter(desk.label), payload: desk.label }, // label and payload
-        async (ctx) => {
+        async (ctx: Context & SessionFlavor<SessionData>) => {
           // if user clicked on one of the desks in this menu (except back button)
           // close the menus
           await closeMenu(ctx);
@@ -207,18 +206,18 @@ const createIndAppointmentMenus = async () => {
 
             sendMessageShowSoonestAvailableSlot(
               ctx,
-              res,
+              res.data,
               deskLabel,
               serviceLabel,
             );
 
+            const chatId = ctx.chat.id;
+            const selectedService = ctx.session.selectedService;
+            const selectedDesk = ctx.session.selectedDesk;
+
             const inlineKeyboardForCreatANotifier = new InlineKeyboard().url(
-              'Notify!',
-              `${process.env.IND_WEB_APP_URL}/notifier?desk=${
-                (ctx as MyContext).session.selectedDesk
-              }&service=${(ctx as MyContext).session.selectedService}&userId=${
-                ctx.chat.id
-              }`,
+              'Create a reminder',
+              `${process.env.TELEGRAM_APP_API}/get-date?chatId=${chatId}&selectedService=${selectedService}&selectedDesk=${selectedDesk}`,
             );
 
             await ctx.reply(
@@ -289,6 +288,25 @@ const createMessageForSoonestAvaibleAppointment = (
  `;
 };
 
+const createMessageForApproveNotifier = async (
+  selected_date,
+  selectedDesk,
+  selectedService,
+) => {
+  const { servicesCode, servicesByDesks, desks } = await fetchIndServicesList();
+
+  console.log(selectedService, servicesCode, servicesByDesks, desks);
+
+  const deskLabel = desks[selectedDesk];
+
+  const serviceLabel = servicesByDesks[selectedService].label;
+
+  return `You selected ${selected_date} at for ${capitalizeFirstLetter(
+    serviceLabel,
+  )} at ${capitalizeFirstLetter(deskLabel)}!
+ `;
+};
+
 const sendSelectedDeskAndServiceMessage = (
   desks,
   services,
@@ -312,4 +330,97 @@ const getIndDesksByService = (servicesByDesks, selectedService: any) => {
   return servicesByDesks[selectedService].desks;
 };
 
-createAndInitBot();
+if (!bot) {
+  bot = createBotInstance(telegramBotApiToken);
+  bot.start();
+
+  createAndInitBot();
+}
+
+// express app
+const app = express();
+app.use(bodyParser.json());
+app.use(cors());
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.listen(process.env.TELEGRAM_APP_PORT, () =>
+  console.log(`Server started on port ${process.env.TELEGRAM_APP_PORT}`),
+);
+
+app.post('/send-message', async (req, res) => {
+  const telegram_chat_id = req.body.telegram_chat_id;
+  const message = req.body.message;
+
+  const inlineKeyboardForBookAppointment = new InlineKeyboard().url(
+    'Book this slot!',
+    `https://oap.ind.nl/oap/en/#/`,
+  );
+
+  await bot.api.sendMessage(telegram_chat_id, message, {
+    parse_mode: 'HTML',
+    reply_markup: inlineKeyboardForBookAppointment,
+  });
+  res.sendStatus(200);
+});
+
+app.get('/get-date', (_, res) => {
+  res.sendFile(path.join(__dirname, 'datepicker.html'));
+});
+
+app.post('/set-date', async (req, res) => {
+  const chatId = req.body.chatId;
+  const selectedDate = req.body.selectedDate;
+  const selectedDesk = req.body.selectedDesk;
+  const selectedService = req.body.selectedService;
+
+  console.log(selectedDate, req.body);
+
+  const messageForApproveWeGotDate = await createMessageForApproveNotifier(
+    selectedDate,
+    selectedDesk,
+    selectedService,
+  );
+
+  try {
+    await bot.api.sendMessage(chatId, messageForApproveWeGotDate);
+
+    const data = JSON.stringify({
+      date: selectedDate,
+      desk: selectedDesk,
+      service: selectedService,
+      telegram_chat_id: chatId,
+      prefered_way_of_communication: 'telegram',
+    });
+
+    console.log(data, 'data')
+
+    const config = {
+      method: 'post',
+      maxBodyLength: Infinity,
+      url: 'http://localhost:3001/notification/telegram/create',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: data,
+    };
+
+    await axios.request(config);
+    const message = await bot.api.sendMessage(
+      chatId,
+      'We are processing your request. give us a moment please',
+    );
+    await bot.api.editMessageText(
+      chatId,
+      message.message_id,
+      'Hooray! We created your notifier! Now We will notify you when a sooner slot became available',
+    );
+  } catch (e) {
+    console.log('ere', JSON.stringify(e));
+    await bot.api.sendMessage(
+      chatId,
+      'something went wrong! please try again and if the problem persists contact us',
+    );
+  }
+
+  res.sendStatus(200);
+});

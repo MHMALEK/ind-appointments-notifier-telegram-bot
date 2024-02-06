@@ -1,9 +1,9 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
+import * as contentful from 'contentful';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
-import contentful from 'contentful';
 const client = contentful.createClient({
   // This is the space ID. A space is like a project folder in Contentful terms
   space: process.env.IND_CONTENT_API_SPACE,

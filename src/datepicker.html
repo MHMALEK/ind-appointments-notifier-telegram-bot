@@ -1,0 +1,156 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>IND appointment notifier - Choose a date</title>
+    <link rel="stylesheet" type="text/css" href="/style.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="
+https://cdn.jsdelivr.net/npm/air-datepicker@3.4.0/air-datepicker.min.js
+"></script>
+
+    <link
+      href="
+https://cdn.jsdelivr.net/npm/air-datepicker@3.4.0/air-datepicker.min.css
+"
+      rel="stylesheet"
+    />
+ 
+  </head>
+
+  <body>
+    <div class="login-root">
+      <div
+        class="box-root flex-flex flex-direction--column"
+        style="min-height: 100vh; flex-grow: 1"
+      >
+        <div class="loginbackground box-background--white padding-top--64">
+          <div class="loginbackground-gridContainer">
+         
+        </div>
+        <div
+          class="box-root padding-top--24 flex-flex flex-direction--column"
+          style="flex-grow: 1; z-index: 9"
+        >
+          <div
+            class="box-root padding-top--48 padding-bottom--24 flex-flex flex-justifyContent--center"
+          >
+          
+          </div>
+          <div class="formbg-outer">
+            <div class="formbg">
+              <div class="formbg-inner padding-card">
+                <h6 class="mb-30">
+                  <a>IND Appointment Notifier</a>
+                </h6>
+                <span class="padding-bottom--15 font-small line-height-normal"
+                  >Please choose a Date that you want to be notified when a
+                  sooner slot became available.</span
+                >
+                <form id="stripe-login">
+                  <div class="field padding-bottom--24">
+                    <div id="datepicker"></div>
+                  </div>
+
+                  <div class="field padding-bottom--24">
+                    <input type="submit" name="submit" value="Continue" />
+                  </div>
+                  <div class="field  hidden message-element" id="show-message" >
+                    <a class="ssolink" href="#"
+                      >Done! You can close this windows now!</a
+                    >
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const localEn = {
+        days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+        daysShort: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+        daysMin: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
+        months: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+        monthsShort: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+        today: 'Today',
+        clear: 'Clear',
+        dateFormat: 'yyyy-MM-dd',
+        timeFormat: 'hh:mm aa',
+        firstDay: 0
+      };
+      document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('stripe-login');
+        const submitButton = form.querySelector('input[type="submit"]');
+        const messageElement = document.getElementById('show-message');
+
+        let selectedDate;
+
+        form.addEventListener('submit', function(event) {
+          event.preventDefault(); // Prevent form submission
+          
+          // Get the query parameters from the URL
+          const urlParams = new URLSearchParams(window.location.search);
+          const chatId = urlParams.get('chatId');
+          const selectedService = urlParams.get('selectedService');
+          const selectedDesk = urlParams.get('selectedDesk');
+          
+          console.log(chatId, selectedService, selectedDesk);
+          // Proceed only if a date has been selected
+          if (selectedDate) {
+            // Send a POST request with the selected date and other parameters
+            fetch(`https://2538-80-113-98-2.ngrok-free.app/set-date`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                selectedDate: selectedDate.formattedDate,
+                chatId: chatId,
+                selectedService: selectedService,
+                selectedDesk: selectedDesk,
+              }),
+            })
+            .then((response) => response.text())
+            .then((data) => {
+              messageElement.style.display = 'block';
+             
+            })
+            .catch((error) => {
+              messageElement.style.display = 'block';
+              messageElement.innerHTML = 'An error occurred. Please try again later.';
+              console.error('Error:', error);
+            });
+          } else {
+            // Display an error message or perform other actions when a date has not been selected
+            messageElement.style.display = 'none';
+            console.log('Please select a date');
+          }
+        });
+        
+        // Disable the submit button initially
+        submitButton.disabled = true;
+
+        const today = new Date();
+        const threeMonthsFromNow = new Date();
+        threeMonthsFromNow.setMonth(today.getMonth()+3);
+
+        // Enable the submit button when a date is selected
+        new AirDatepicker('#datepicker', {
+          inline: true,
+          locale: localEn,
+          minDate: today,
+          maxDate: threeMonthsFromNow,
+          dateFormat: 'yyyy-MM-dd',
+          onSelect: function (selection) {
+            console.log(selection)
+            messageElement.style.display = 'none';
+            selectedDate = selection;
+            submitButton.disabled = false;
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
